@@ -10,7 +10,7 @@ use windows::core::Result;
 use windows::Win32::Foundation::POINT;
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
 use windows::Win32::UI::Accessibility::{
-    CUIAutomation, IUIAutomation, TreeScope_Element, UIA_ValueValuePropertyId,
+    CUIAutomation, IUIAutomation, UIA_ValueValuePropertyId,
     UIA_NamePropertyId,
 };
 
@@ -44,18 +44,16 @@ pub fn text_at_point(x: i32, y: i32) -> Option<String> {
     // Fall back to simple properties: Value (edit controls, list items)
     // then Name (labels, buttons, calendar cells).
     if let Ok(value) = unsafe { element.GetCurrentPropertyValue(UIA_ValueValuePropertyId) } {
-        if let Ok(s) = value.to_string() {
-            if !s.trim().is_empty() {
-                return Some(s);
-            }
+        let s = value.to_string();
+        if !s.trim().is_empty() {
+            return Some(s);
         }
     }
 
     if let Ok(name) = unsafe { element.GetCurrentPropertyValue(UIA_NamePropertyId) } {
-        if let Ok(s) = name.to_string() {
-            if !s.trim().is_empty() {
-                return Some(s);
-            }
+        let s = name.to_string();
+        if !s.trim().is_empty() {
+            return Some(s);
         }
     }
 
@@ -63,7 +61,7 @@ pub fn text_at_point(x: i32, y: i32) -> Option<String> {
 }
 
 fn try_text_pattern(
-    automation: &IUIAutomation,
+    _automation: &IUIAutomation,
     element: &windows::Win32::UI::Accessibility::IUIAutomationElement,
 ) -> Result<String> {
     use windows::Win32::UI::Accessibility::{IUIAutomationTextPattern, UIA_TextPatternId};

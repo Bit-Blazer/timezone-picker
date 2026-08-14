@@ -5,9 +5,12 @@
 use windows::core::w;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreatePen, CreateSolidBrush, EndPaint, FillRect, InvalidateRect, Rectangle,
+    BeginPaint, CreatePen, EndPaint, InvalidateRect, Rectangle,
     SelectObject, SetBkMode, TRANSPARENT, HBRUSH, PAINTSTRUCT, PS_SOLID,
+    GetStockObject, NULL_BRUSH,
 };
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, VK_ESCAPE};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const OVERLAY_CLASS: windows::core::PCWSTR = w!("TZPickerOverlay");

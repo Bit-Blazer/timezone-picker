@@ -4,10 +4,11 @@
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateFontW, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint, FillRect,
+    BeginPaint, CreateFontW, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint,
     SelectObject, SetBkMode, SetTextColor, TRANSPARENT, DT_CENTER, DT_SINGLELINE, DT_VCENTER,
     FW_NORMAL, PAINTSTRUCT,
 };
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const POPUP_CLASS: PCWSTR = w!("TZPickerPopup");
@@ -81,10 +82,10 @@ extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM
 
                 let font = CreateFontW(
                     18, 0, 0, 0, FW_NORMAL.0 as i32, 0, 0, 0,
-                    windows::Win32::Graphics::Gdi::DEFAULT_CHARSET,
-                    windows::Win32::Graphics::Gdi::OUT_DEFAULT_PRECIS,
-                    windows::Win32::Graphics::Gdi::CLIP_DEFAULT_PRECIS,
-                    windows::Win32::Graphics::Gdi::DEFAULT_QUALITY,
+                    windows::Win32::Graphics::Gdi::DEFAULT_CHARSET.0 as u32,
+                    windows::Win32::Graphics::Gdi::OUT_DEFAULT_PRECIS.0 as u32,
+                    windows::Win32::Graphics::Gdi::CLIP_DEFAULT_PRECIS.0 as u32,
+                    windows::Win32::Graphics::Gdi::DEFAULT_QUALITY.0 as u32,
                     windows::Win32::Graphics::Gdi::FF_DONTCARE.0 as u32,
                     w!("Segoe UI"),
                 );

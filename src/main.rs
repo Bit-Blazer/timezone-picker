@@ -12,7 +12,8 @@ mod uia;
 use chrono::{Datelike, Local};
 use windows::core::w;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::UI::Input::KeyboardAndMouse::{MOD_ALT, MOD_CONTROL};
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, MOD_ALT, MOD_CONTROL};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const HOTKEY_ID: i32 = 1;
