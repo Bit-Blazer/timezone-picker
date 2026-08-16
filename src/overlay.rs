@@ -2,16 +2,15 @@
 // the user drag a selection rectangle. Blocks (runs its own message loop)
 // until the user releases the mouse button or presses Escape.
 
-use windows::core::w;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreatePen, EndPaint, InvalidateRect, Rectangle,
-    SelectObject, SetBkMode, TRANSPARENT, HBRUSH, PAINTSTRUCT, PS_SOLID,
-    GetStockObject, NULL_BRUSH,
+    BeginPaint, CreatePen, EndPaint, GetStockObject, HBRUSH, InvalidateRect, NULL_BRUSH,
+    PAINTSTRUCT, PS_SOLID, Rectangle, SelectObject, SetBkMode, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, VK_ESCAPE};
 use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::core::w;
 
 const OVERLAY_CLASS: windows::core::PCWSTR = w!("TZPickerOverlay");
 
@@ -64,7 +63,7 @@ pub fn run_selection() -> Option<RECT> {
             vh,
             None,
             None,
-            hinstance,
+            Some(hinstance.into()),
             Some(state.as_mut() as *mut _ as *const _),
         )
         .unwrap();
@@ -74,23 +73,25 @@ pub fn run_selection() -> Option<RECT> {
         SetLayeredWindowAttributes(hwnd, windows::Win32::Foundation::COLORREF(0), 90, LWA_ALPHA)
             .ok();
 
-        SetForegroundWindow(hwnd);
+        let _ = SetForegroundWindow(hwnd);
         SetCapture(hwnd);
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).into() {
-            if msg.message == WM_LBUTTONUP || msg.message == WM_KEYDOWN && msg.wParam.0 == VK_ESCAPE.0 as usize {
-                TranslateMessage(&msg);
+            if msg.message == WM_LBUTTONUP
+                || msg.message == WM_KEYDOWN && msg.wParam.0 == VK_ESCAPE.0 as usize
+            {
+                let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
                 break;
             }
-            TranslateMessage(&msg);
+            let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
 
         ReleaseCapture().ok();
         DestroyWindow(hwnd).ok();
-        UnregisterClassW(OVERLAY_CLASS, hinstance).ok();
+        UnregisterClassW(OVERLAY_CLASS, Some(hinstance.into())).ok();
 
         state.result
     }
@@ -115,11 +116,11 @@ extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM
                 LRESULT(0)
             }
             WM_MOUSEMOVE => {
-                if let Some(state) = state_ptr.as_mut() {
-                    if state.dragging {
-                        state.current = point_from_lparam(lparam);
-                        InvalidateRect(hwnd, None, false);
-                    }
+                if let Some(state) = state_ptr.as_mut()
+                    && state.dragging
+                {
+                    state.current = point_from_lparam(lparam);
+                    let _ = InvalidateRect(Some(hwnd), None, false);
                 }
                 LRESULT(0)
             }
@@ -147,7 +148,6 @@ extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM
                         });
                     }
                 }
-                PostQuitMessage(0);
                 LRESULT(0)
             }
             WM_KEYDOWN if wparam.0 as u16 == VK_ESCAPE.0 => {
@@ -155,31 +155,33 @@ extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM
                     state.cancelled = true;
                     state.result = None;
                 }
-                PostQuitMessage(0);
                 LRESULT(0)
             }
             WM_PAINT => {
                 let mut ps = PAINTSTRUCT::default();
                 let hdc = BeginPaint(hwnd, &mut ps);
-                if let Some(state) = state_ptr.as_ref() {
-                    if state.dragging {
-                        let pen = CreatePen(PS_SOLID, 2, windows::Win32::Foundation::COLORREF(0x00FFFF00));
-                        let old_pen = SelectObject(hdc, pen);
-                        let old_brush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
-                        SetBkMode(hdc, TRANSPARENT);
-                        Rectangle(
-                            hdc,
-                            state.start.x.min(state.current.x),
-                            state.start.y.min(state.current.y),
-                            state.start.x.max(state.current.x),
-                            state.start.y.max(state.current.y),
-                        )
-                        .ok();
-                        SelectObject(hdc, old_pen);
-                        SelectObject(hdc, old_brush);
-                    }
+                if let Some(state) = state_ptr.as_ref()
+                    && state.dragging
+                {
+                    let pen = CreatePen(
+                        PS_SOLID,
+                        2,
+                        windows::Win32::Foundation::COLORREF(0x00FFFF00),
+                    );
+                    let old_pen = SelectObject(hdc, pen.into());
+                    let old_brush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+                    SetBkMode(hdc, TRANSPARENT);
+                    let _ = Rectangle(
+                        hdc,
+                        state.start.x.min(state.current.x),
+                        state.start.y.min(state.current.y),
+                        state.start.x.max(state.current.x),
+                        state.start.y.max(state.current.y),
+                    );
+                    SelectObject(hdc, old_pen);
+                    SelectObject(hdc, old_brush);
                 }
-                EndPaint(hwnd, &ps);
+                let _ = EndPaint(hwnd, &ps);
                 LRESULT(0)
             }
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),

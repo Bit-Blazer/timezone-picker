@@ -54,11 +54,27 @@ pub fn resolve_abbreviation(abbr: &str) -> Option<Tz> {
     TZ_ABBREVIATIONS.get(abbr.to_uppercase().as_str()).copied()
 }
 
-/// The user's default "convert to" timezone when the OCR/UIA text doesn't
-/// explicitly contain a "X to Y" instruction.
-///
-/// TODO: load this from a small config file (e.g. %APPDATA%\timezone-picker\config.toml)
-/// instead of hardcoding. Left as a constant for the first working version.
-pub fn default_target_tz() -> Tz {
-    chrono_tz::Asia::Kolkata
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_abbreviation() {
+        assert_eq!(
+            resolve_abbreviation("PST"),
+            Some(chrono_tz::America::Los_Angeles)
+        );
+        assert_eq!(
+            resolve_abbreviation("pst"),
+            Some(chrono_tz::America::Los_Angeles)
+        );
+        assert_eq!(
+            resolve_abbreviation("pSt"),
+            Some(chrono_tz::America::Los_Angeles)
+        );
+
+        // Invalid should return None
+        assert_eq!(resolve_abbreviation("INVALID"), None);
+        assert_eq!(resolve_abbreviation(""), None);
+    }
 }

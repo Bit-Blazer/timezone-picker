@@ -1,29 +1,40 @@
 // Prevents a console window from flashing on launch (GUI subsystem).
 #![windows_subsystem = "windows"]
 
+mod autostart;
 mod clipboard;
+mod config;
+mod ocr;
 mod overlay;
 mod parse;
 mod popup;
 mod tz;
 mod uia;
-// mod ocr; // TODO: bitmap capture + Windows.Media.Ocr fallback -- see README.
 
-use chrono::{Datelike, Local};
-use windows::core::w;
+use std::env;
+use std::process::Command;
+use tray_item::{IconSource, TrayItem};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::Input::KeyboardAndMouse::{RegisterHotKey, MOD_ALT, MOD_CONTROL};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    HOT_KEY_MODIFIERS, MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, RegisterHotKey,
+};
 use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::core::w;
 
 const HOTKEY_ID: i32 = 1;
-const WM_APP_TRIGGER: u32 = WM_APP + 1;
 
 fn main() {
+    autostart::register_if_needed();
+
+    // Trigger config load
+    let cfg = &config::CONFIG;
+
     unsafe {
         let hinstance = GetModuleHandleW(None).unwrap();
 
         let class_name = w!("TZPickerHidden");
+        UnregisterClassW(w!("TZPickerHidden"), Some(hinstance.into())).ok();
         let wc = WNDCLASSW {
             lpfnWndProc: Some(wnd_proc),
             hInstance: hinstance.into(),
@@ -37,21 +48,70 @@ fn main() {
             class_name,
             w!("TZPicker"),
             Default::default(),
-            0, 0, 0, 0,
-            None, None, hinstance, None,
+            0,
+            0,
+            0,
+            0,
+            None,
+            None,
+            Some(hinstance.into()),
+            None,
         )
         .unwrap();
 
-        // Ctrl+Alt+T. Change here if it collides with something on your
-        // system, or make this configurable later.
-        let vk_t = 0x54u32; // 'T'
-        if RegisterHotKey(hwnd, HOTKEY_ID, MOD_CONTROL | MOD_ALT, vk_t).is_err() {
+        // Parse hotkey from config
+        let mut mods = HOT_KEY_MODIFIERS(0);
+        let mut vk = 0u32;
+        for part in cfg.hotkey.split('+') {
+            let part = part.trim().to_uppercase();
+            match part.as_str() {
+                "CTRL" => mods |= MOD_CONTROL,
+                "ALT" => mods |= MOD_ALT,
+                "SHIFT" => mods |= MOD_SHIFT,
+                "WIN" => mods |= MOD_WIN,
+                _ => {
+                    if part.len() == 1 {
+                        vk = part.chars().next().unwrap() as u32;
+                    }
+                }
+            }
+        }
+
+        if vk == 0 {
+            // fallback if badly configured
+            vk = 0x54; // 'T'
+            mods = MOD_CONTROL | MOD_ALT;
+        }
+
+        if RegisterHotKey(Some(hwnd), HOTKEY_ID, mods, vk).is_err() {
             eprintln!("Failed to register hotkey -- it may be in use by another app.");
+        }
+
+        // Initialize System Tray
+        let mut tray_opt = TrayItem::new("Timezone Picker", IconSource::Resource("app-icon"));
+
+        if let Ok(ref mut tray) = tray_opt {
+            tray.add_menu_item("Settings", || {
+                if let Ok(appdata) = env::var("APPDATA") {
+                    let mut path = std::path::PathBuf::from(appdata);
+                    path.push("timezone-picker");
+                    path.push("config.toml");
+                    let _ = Command::new("notepad.exe").arg(path).spawn();
+                }
+            })
+            .unwrap_or_else(|e| eprintln!("Tray settings error: {}", e));
+
+            tray.add_menu_item("Quit", || {
+                std::process::exit(0);
+            })
+            .unwrap_or_else(|e| eprintln!("Tray quit error: {}", e));
+        } else {
+            eprintln!("Failed to initialize tray item. Missing icon resource?");
         }
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).into() {
-            TranslateMessage(&msg);
+            let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
     }
@@ -82,48 +142,14 @@ fn run_pipeline() {
     let center_y = (rect.top + rect.bottom) / 2;
 
     // --- Primary path: UI Automation ---
-    let extracted = uia::text_at_point(center_x, center_y);
+    let mut extracted = uia::text_at_point(center_x, center_y).unwrap_or_default();
 
-    // --- Fallback path (TODO): if `extracted` is None, or if it's Some
-    // but parse::extract_request() below fails to find a datetime in it,
-    // fall back to: capture `rect` via BitBlt, upscale, run through
-    // Windows.Media.Ocr.OcrEngine, and retry parsing on the OCR'd text.
-    // Stubbed for now so the UIA-first path can be validated independently.
+    if extracted.trim().is_empty()
+        && let Some(ocr_text) = ocr::extract_text(rect)
+    {
+        extracted = ocr_text;
+    }
 
-    let Some(text) = extracted else {
-        popup::show("No text found here (OCR fallback not yet implemented)", center_x, center_y);
-        return;
-    };
-
-    let this_year = Local::now().year();
-
-    let Some(parsed) = parse::extract_request(&text, this_year) else {
-        popup::show("Couldn't find a datetime in the selected text", center_x, center_y);
-        return;
-    };
-
-    let target = parsed.target_tz.unwrap_or_else(tz::default_target_tz);
-
-    let source_dt = parsed
-        .source_tz
-        .from_local_datetime(&parsed.datetime)
-        .earliest();
-
-    let Some(source_dt) = source_dt else {
-        popup::show("Ambiguous local time (DST fold)", center_x, center_y);
-        return;
-    };
-
-    let converted = source_dt.with_timezone(&target);
-    let result = format!(
-        "{}  ({})",
-        converted.format("%b %d, %Y  %I:%M %p"),
-        target
-    );
-
-    clipboard::set_text(&result).ok();
-    popup::show(&result, center_x, center_y);
+    // Delegate parsing and display to the interactive popup
+    popup::show(&extracted, center_x, center_y);
 }
-
-// Bring TimeZone trait into scope for `from_local_datetime`.
-use chrono::TimeZone;
