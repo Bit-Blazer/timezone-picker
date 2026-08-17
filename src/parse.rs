@@ -79,7 +79,16 @@ pub fn is_us_locale() -> bool {
 /// Try to find a datetime + source timezone + (optional) explicit target
 /// timezone somewhere within an arbitrary blob of text (e.g. a whole
 /// sentence or UI element string, not just the exact selected substring).
-pub fn extract_request(text: &str, assumed_year: i32) -> Option<ParsedRequest> {
+pub fn extract_request(raw_text: &str, assumed_year: i32) -> Option<ParsedRequest> {
+    // Windows file explorer and other native apps often insert LRM (U+200E) and RLM (U+200F)
+    // into dates to control localized rendering. We must strip these invisible formatting
+    // characters before regex matching, otherwise they cause false negatives.
+    let cleaned_text = raw_text.replace(
+        &['\u{200B}', '\u{200C}', '\u{200D}', '\u{200E}', '\u{200F}'][..],
+        "",
+    );
+    let text = cleaned_text.as_str();
+
     let explicit_target = INSTRUCTION_RE.captures(text).and_then(|c| {
         let to = resolve_abbreviation(&c[2])?;
         Some(to)
@@ -92,11 +101,17 @@ pub fn extract_request(text: &str, assumed_year: i32) -> Option<ParsedRequest> {
 
     let (datetime, source_tz) = match parsed_dt {
         Some((dt, tzabbr)) => {
-            let src = tzabbr.and_then(|m| resolve_abbreviation(&m)).or_else(|| {
-                INSTRUCTION_RE
-                    .captures(text)
-                    .and_then(|c| resolve_abbreviation(&c[1]))
-            })?;
+            let src = tzabbr
+                .and_then(|m| resolve_abbreviation(&m))
+                .or_else(|| {
+                    INSTRUCTION_RE
+                        .captures(text)
+                        .and_then(|c| resolve_abbreviation(&c[1]))
+                })
+                // No abbreviation anywhere in the text (e.g. a bare
+                // "2026-08-14 17:35:00") -- assume the machine's local
+                // timezone rather than giving up on a valid datetime.
+                .or_else(crate::tz::local_tz)?;
             (dt, src)
         }
         None => {
@@ -353,5 +368,33 @@ mod tests {
         assert_eq!(r.source_tz, chrono_tz::America::Los_Angeles);
         // We know hour will be 15
         assert_eq!(r.datetime.time().to_string(), "15:00:00");
+    }
+
+    #[test]
+    fn bare_iso_with_no_tz_falls_back_to_local() {
+        // This is the exact case that was previously returning None:
+        // a valid datetime with no timezone info anywhere in the text.
+        let r = extract_request("2026-08-14 17:35:00", 2026).unwrap();
+        assert_eq!(r.datetime.to_string(), "2026-08-14 17:35:00");
+        // Can't assert a specific tz portably (depends on the machine this
+        // test runs on), but it must have resolved to *something*.
+    }
+
+    #[test]
+    fn test_user_ist_format() {
+        let r = extract_request("8/16/2026 9:02 PM IST", 2026);
+        assert!(r.is_some(), "Should parse successfully");
+        let r = r.unwrap();
+        assert_eq!(r.source_tz.name(), "Asia/Kolkata");
+    }
+
+    #[test]
+    fn test_windows_file_explorer_lrm_characters() {
+        // Text copied from windows file explorer often has U+200E marks
+        let text_with_lrm = "\u{200e}8\u{200e}/\u{200e}16\u{200e}/\u{200e}2026 \u{200e}9:02 PM IST";
+        let r = extract_request(text_with_lrm, 2026);
+        assert!(r.is_some(), "Should strip LRM and parse successfully");
+        let r = r.unwrap();
+        assert_eq!(r.source_tz.name(), "Asia/Kolkata");
     }
 }

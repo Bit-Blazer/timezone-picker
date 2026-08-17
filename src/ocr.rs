@@ -51,7 +51,7 @@ pub fn extract_text(rect: RECT) -> Option<String> {
         let size = (width * height * 4) as u32;
         let mut pixels = vec![0u8; size as usize];
 
-        GetDIBits(
+        if GetDIBits(
             hdc_screen,
             hbm,
             0,
@@ -59,7 +59,14 @@ pub fn extract_text(rect: RECT) -> Option<String> {
             Some(pixels.as_mut_ptr() as *mut _),
             &mut bmi,
             DIB_RGB_COLORS,
-        );
+        ) == 0
+        {
+            SelectObject(hdc_mem, old_obj);
+            let _ = DeleteObject(hbm.into());
+            let _ = DeleteDC(hdc_mem);
+            ReleaseDC(None, hdc_screen);
+            return None;
+        }
 
         SelectObject(hdc_mem, old_obj);
         let _ = DeleteObject(hbm.into());

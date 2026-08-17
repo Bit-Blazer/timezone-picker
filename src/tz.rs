@@ -54,6 +54,17 @@ pub fn resolve_abbreviation(abbr: &str) -> Option<Tz> {
     TZ_ABBREVIATIONS.get(abbr.to_uppercase().as_str()).copied()
 }
 
+/// Detects the machine's local IANA timezone (e.g. "Asia/Kolkata"). Used as
+/// the assumed *source* timezone when selected text is a bare datetime with
+/// no timezone info at all -- e.g. "2026-08-14 17:35:00" typed in Notepad,
+/// a log line, or most app timestamps that are implicitly "local time."
+/// Without this fallback, extract_request() has nothing to resolve
+/// source_tz to and gives up on an otherwise perfectly parseable datetime.
+pub fn local_tz() -> Option<Tz> {
+    let name = iana_time_zone::get_timezone().ok()?;
+    name.parse::<Tz>().ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

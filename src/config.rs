@@ -9,6 +9,7 @@ pub static CONFIG: Lazy<Config> = Lazy::new(Config::load);
 pub struct Config {
     pub target_tzs: Vec<Tz>,
     pub hotkey: String,
+    pub autostart: bool,
 }
 
 impl Config {
@@ -22,6 +23,7 @@ impl Config {
         ];
 
         let mut hotkey = "Ctrl+Alt+Z".to_string();
+        let mut autostart = true;
 
         if let Ok(appdata) = env::var("APPDATA") {
             let mut path = PathBuf::from(appdata);
@@ -32,11 +34,12 @@ impl Config {
                 let parsed = Self::parse_config(&content, target_tzs.clone());
                 target_tzs = parsed.target_tzs;
                 hotkey = parsed.hotkey;
+                autostart = parsed.autostart;
             } else {
                 // Try to create default config file
                 fs::create_dir_all(path.parent().unwrap()).ok();
                 let default_content = format!(
-                    "# Timezone Picker Configuration\n\n# Target timezones for conversions (IANA format, comma separated)\n# Examples: America/New_York, Europe/London, Asia/Kolkata\ntarget_tzs = \"{}\"\n\n# Global shortcut to trigger the app\nhotkey = \"Ctrl+Alt+Z\"\n",
+                    "# Timezone Picker Configuration\n\n# Target timezones for conversions (IANA format, comma separated)\n# Examples: America/New_York, Europe/London, Asia/Kolkata\ntarget_tzs = \"{}\"\n\n# Global shortcut to trigger the app\nhotkey = \"Ctrl+Alt+Z\"\n\n# Run on system startup\nautostart = true\n",
                     target_tzs
                         .iter()
                         .map(|t| t.name())
@@ -47,11 +50,16 @@ impl Config {
             }
         }
 
-        Self { target_tzs, hotkey }
+        Self {
+            target_tzs,
+            hotkey,
+            autostart,
+        }
     }
 
     pub fn parse_config(content: &str, mut target_tzs: Vec<Tz>) -> Self {
         let mut hotkey = "Ctrl+Alt+Z".to_string();
+        let mut autostart = true;
         for line in content.lines() {
             let line = line.trim();
             if line.starts_with("target_tzs") || line.starts_with("target_tz") {
@@ -70,9 +78,21 @@ impl Config {
                 && let Some(val) = extract_value(line)
             {
                 hotkey = val;
+            } else if line.starts_with("autostart") {
+                let parts: Vec<&str> = line.splitn(2, '=').collect();
+                if parts.len() == 2 {
+                    let val = parts[1].trim().to_lowercase();
+                    if val == "false" {
+                        autostart = false;
+                    }
+                }
             }
         }
-        Self { target_tzs, hotkey }
+        Self {
+            target_tzs,
+            hotkey,
+            autostart,
+        }
     }
 }
 
@@ -95,13 +115,14 @@ mod tests {
 
     #[test]
     fn test_parse_valid_config() {
-        let content = "target_tzs = \"America/Los_Angeles, Asia/Kolkata\"\nhotkey = \"Ctrl+Alt+X\"";
+        let content = "target_tzs = \"America/Los_Angeles, Asia/Kolkata\"\nhotkey = \"Ctrl+Alt+X\"\nautostart = false";
         let config = Config::parse_config(content, vec![UTC]);
         assert_eq!(
             config.target_tzs,
             vec![chrono_tz::America::Los_Angeles, chrono_tz::Asia::Kolkata]
         );
         assert_eq!(config.hotkey, "Ctrl+Alt+X");
+        assert!(!config.autostart);
     }
 
     #[test]

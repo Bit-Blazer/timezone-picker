@@ -25,10 +25,14 @@ use windows::core::w;
 const HOTKEY_ID: i32 = 1;
 
 fn main() {
-    autostart::register_if_needed();
-
     // Trigger config load
     let cfg = &config::CONFIG;
+
+    if cfg.autostart {
+        autostart::register_if_needed();
+    } else {
+        autostart::unregister();
+    }
 
     unsafe {
         let hinstance = GetModuleHandleW(None).unwrap();
@@ -88,7 +92,7 @@ fn main() {
         }
 
         // Initialize System Tray
-        let mut tray_opt = TrayItem::new("Timezone Picker", IconSource::Resource("app-icon"));
+        let mut tray_opt = TrayItem::new("Timezone Picker", IconSource::Resource("1"));
 
         if let Ok(ref mut tray) = tray_opt {
             tray.add_menu_item("Settings", || {

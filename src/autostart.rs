@@ -26,3 +26,13 @@ pub fn register_if_needed() {
         }
     }
 }
+
+pub fn unregister() {
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    if let Ok(run_key) = hkcu.open_subkey_with_flags(
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+        KEY_READ | KEY_WRITE,
+    ) {
+        let _ = run_key.delete_value(APP_NAME);
+    }
+}
